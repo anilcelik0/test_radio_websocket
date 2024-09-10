@@ -1,0 +1,86 @@
+<!-- templates/radio_websocket.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSocket Radio Stream</title>
+</head>
+<body>
+    <h1>WebSocket Radio Stream</h1>
+    <button id="startButton">Start Stream</button>
+    <audio controls autoplay id="audioPlayer"></audio>
+
+    <script>
+        const startButton = document.getElementById('startButton');
+        const audioPlayer = document.getElementById('audioPlayer');
+        let socket;
+        let mediaSource;
+        let sourceBuffer;
+        let queue = []; // Queue to hold incoming audio data
+
+        startButton.addEventListener('click', () => {
+            // Initialize MediaSource for streaming
+            mediaSource = new MediaSource();
+            audioPlayer.src = URL.createObjectURL(mediaSource);
+
+            // Set up MediaSource event listener
+            mediaSource.addEventListener('sourceopen', () => {
+                try {
+                    sourceBuffer = mediaSource.addSourceBuffer('audio/mpeg'); // Ensure correct MIME type
+                } catch (error) {
+                    console.error('Error adding SourceBuffer:', error);
+                    return;
+                }
+
+                // Initialize WebSocket connection
+                socket = new WebSocket('ws://' + '172.17.0.1:8000' + '/ws/radio/');
+                socket.binaryType = 'arraybuffer';  // Ensure WebSocket receives data as ArrayBuffer (binary)
+
+                socket.onmessage = function(event) {
+                    if (event.data) {
+                        console.log(event.data)
+                        const audioData = new Uint8Array(event.data);  // Create a Uint8Array from ArrayBuffer
+                        queue.push(audioData);  // Queue the incoming audio data
+                        appendToBuffer();  // Append data to SourceBuffer when ready
+                    }
+                };
+
+                socket.onerror = function(event) {
+                    console.error("WebSocket error:", event);
+                };
+
+                socket.onclose = function(event) {
+                    console.log("WebSocket closed: ", event);
+                    if (mediaSource.readyState === 'open') {
+                        mediaSource.endOfStream(); // Close MediaSource when WebSocket is closed
+                    }
+                };
+            });
+
+            // Function to append audio data to the SourceBuffer
+            function appendToBuffer() {
+                if (sourceBuffer && !sourceBuffer.updating && queue.length > 0) {
+                    try {
+                        const audioChunk = queue.shift(); // Get the next chunk from the queue
+                        sourceBuffer.appendBuffer(audioChunk);  // Append binary data to sourceBuffer
+                    } catch (error) {
+                        console.error('Error appending to SourceBuffer:', error);
+                    }
+                }
+            }
+
+            // Handle SourceBuffer updates
+            sourceBuffer.addEventListener('updateend', appendToBuffer);
+
+            // Resume audio playback
+            audioPlayer.play().catch((error) => {
+                console.error('Error trying to play audio:', error);
+            });
+
+            startButton.disabled = true; // Disable the button after the stream starts
+        });
+    </script>
+</body>
+</html>

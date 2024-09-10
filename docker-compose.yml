@@ -1,0 +1,44 @@
+version: '3.8'
+
+services:  
+  django:
+    build: .
+    container_name: django_for_websocket
+    command: bash -c "python manage.py makemigrations && python manage.py migrate && python manage.py runserver 0.0.0.0:8000"
+    
+    restart: always
+
+    ports:
+        - "8000:8000"
+    volumes: 
+      - .:/app
+    depends_on: 
+      - redis
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+
+  redis:
+    image: redis:7.4.0-alpine
+    container_name: redis_for_websocket
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: madefire/chordtest
+    command: ['celery', '-A', 'test_radio_websocket', 'worker', '-l', 'info']
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    volumes:
+      - ./:/app/
+    depends_on:
+      - redis
+
+volumes:
+  redis_data:
