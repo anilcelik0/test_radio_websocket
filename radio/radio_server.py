@@ -17,7 +17,7 @@ def start_radio_server():
         try:
             print(f"Connection from {client_address}")
             # Simulate streaming audio data
-            with open("radio/darth_vader.mpeg", "rb") as file: # Simulate audio data
+            with open("radio/sample3.aac", "rb") as file: # Simulate audio data
                 data = file.read()
             connection.sendall(data)
             time.sleep(1)  # Simulate a delay between packets

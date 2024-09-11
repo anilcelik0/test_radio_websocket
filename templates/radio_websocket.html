@@ -28,14 +28,14 @@
             // Set up MediaSource event listener
             mediaSource.addEventListener('sourceopen', () => {
                 try {
-                    sourceBuffer = mediaSource.addSourceBuffer('audio/mpeg'); // Ensure correct MIME type
+                    sourceBuffer = mediaSource.addSourceBuffer('audio/aac'); // Ensure correct MIME type
                 } catch (error) {
                     console.error('Error adding SourceBuffer:', error);
                     return;
                 }
 
                 // Initialize WebSocket connection
-                socket = new WebSocket('ws://' + '172.17.0.1:8000' + '/ws/radio/');
+                socket = new WebSocket('ws://' + 'localhost:8000' + '/ws/radio/');
                 socket.binaryType = 'arraybuffer';  // Ensure WebSocket receives data as ArrayBuffer (binary)
 
                 socket.onmessage = function(event) {
