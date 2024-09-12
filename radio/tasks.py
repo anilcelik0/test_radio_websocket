@@ -31,36 +31,72 @@ def listen_to_port():
 
 @shared_task
 def run_radio_pipeline():
-    rtl_sdr_command = [
-        "rtl_sdr", "-s", "2400000", "-f", "156425000", "-g", "20", "-"
-    ]
 
-    # csdr komutları
-    csdr_convert_u8_f = ["csdr", "convert_u8_f"]
-    csdr_shift_addition_cc = ["csdr", "shift_addition_cc", str((156425000 - 156775000) / 2400000)]
-    csdr_fir_decimate_cc = ["csdr", "fir_decimate_cc", "50", "0.005", "HAMMING"]
-    csdr_fmdemod_quadri_cf = ["csdr", "fmdemod_quadri_cf"]
-    csdr_limit_ff = ["csdr", "limit_ff"]
-    csdr_deemphasis_nfm_ff = ["csdr", "deemphasis_nfm_ff", "48000"]
-    csdr_fastagc_ff = ["csdr", "fastagc_ff"]
-    csdr_convert_f_s16 = ["csdr", "convert_f_s16"]
+    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server_socket.bind(('0.0.0.0', 8001))
+    server_socket.listen(1)
+    
+    print("Server is listening on port 8001...")
 
-    # nc komutu
-    nc_command = ["nc", "-l", "-p", "8001"]
+    while True:
+        # Accept incoming connection
+        client_socket, client_address = server_socket.accept()
+        print(f"Connection established with {client_address}")
 
-    # Alt süreçleri kurarak zincirleme yapmak için subprocess.Popen kullan
-    rtl_sdr_process = subprocess.Popen(rtl_sdr_command, stdout=subprocess.PIPE)
-    convert_u8_f_process = subprocess.Popen(csdr_convert_u8_f, stdin=rtl_sdr_process.stdout, stdout=subprocess.PIPE)
-    shift_addition_cc_process = subprocess.Popen(csdr_shift_addition_cc, stdin=convert_u8_f_process.stdout, stdout=subprocess.PIPE)
-    fir_decimate_cc_process = subprocess.Popen(csdr_fir_decimate_cc, stdin=shift_addition_cc_process.stdout, stdout=subprocess.PIPE)
-    fmdemod_quadri_cf_process = subprocess.Popen(csdr_fmdemod_quadri_cf, stdin=fir_decimate_cc_process.stdout, stdout=subprocess.PIPE)
-    limit_ff_process = subprocess.Popen(csdr_limit_ff, stdin=fmdemod_quadri_cf_process.stdout, stdout=subprocess.PIPE)
-    deemphasis_nfm_ff_process = subprocess.Popen(csdr_deemphasis_nfm_ff, stdin=limit_ff_process.stdout, stdout=subprocess.PIPE)
-    fastagc_ff_process = subprocess.Popen(csdr_fastagc_ff, stdin=deemphasis_nfm_ff_process.stdout, stdout=subprocess.PIPE)
-    convert_f_s16_process = subprocess.Popen(csdr_convert_f_s16, stdin=fastagc_ff_process.stdout, stdout=subprocess.PIPE)
-    nc_process = subprocess.Popen(nc_command, stdin=convert_f_s16_process.stdout)
+        # Create the pipeline of commands using subprocess
+        try:
+            rtl_sdr_command = [
+                'rtl_sdr', '-s', '2400000', '-f', '156425000', '-g', '20', '-'
+            ]
+            csdr_commands = [
+                'csdr', 'convert_u8_f'
+            ]
+            shift_command = [
+                'csdr', 'shift_addition_cc', str((156425000 - 156775000) / 2400000)
+            ]
+            fir_decimate_command = [
+                'csdr', 'fir_decimate_cc', '50', '0.005', 'HAMMING'
+            ]
+            fmdemod_command = [
+                'csdr', 'fmdemod_quadri_cf'
+            ]
+            limit_command = [
+                'csdr', 'limit_ff'
+            ]
+            deemphasis_command = [
+                'csdr', 'deemphasis_nfm_ff', '48000'
+            ]
+            agc_command = [
+                'csdr', 'fastagc_ff'
+            ]
+            convert_command = [
+                'csdr', 'convert_f_s16'
+            ]
+            ffmpeg_command = [
+                'ffmpeg', '-f', 's16le', '-ar', '48000', '-ac', '1', '-i', '-', '-f', 's16le', '-acodec', 'pcm_s16le', '-'
+            ]
 
-    # Son süreç olan nc_process bitene kadar bekleyin
-    nc_process.wait()
+            # Set up the pipeline processes
+            rtl_sdr_process = subprocess.Popen(rtl_sdr_command, stdout=subprocess.PIPE)
+            csdr_process_1 = subprocess.Popen(csdr_commands, stdin=rtl_sdr_process.stdout, stdout=subprocess.PIPE)
+            csdr_process_2 = subprocess.Popen(shift_command, stdin=csdr_process_1.stdout, stdout=subprocess.PIPE)
+            csdr_process_3 = subprocess.Popen(fir_decimate_command, stdin=csdr_process_2.stdout, stdout=subprocess.PIPE)
+            csdr_process_4 = subprocess.Popen(fmdemod_command, stdin=csdr_process_3.stdout, stdout=subprocess.PIPE)
+            csdr_process_5 = subprocess.Popen(limit_command, stdin=csdr_process_4.stdout, stdout=subprocess.PIPE)
+            csdr_process_6 = subprocess.Popen(deemphasis_command, stdin=csdr_process_5.stdout, stdout=subprocess.PIPE)
+            csdr_process_7 = subprocess.Popen(agc_command, stdin=csdr_process_6.stdout, stdout=subprocess.PIPE)
+            csdr_process_8 = subprocess.Popen(convert_command, stdin=csdr_process_7.stdout, stdout=subprocess.PIPE)
+            ffmpeg_process = subprocess.Popen(ffmpeg_command, stdin=csdr_process_8.stdout, stdout=subprocess.PIPE)
+            
+            # Stream the output to the client
+            while True:
+                data = ffmpeg_process.stdout.read(4096)
+                if not data:
+                    break
+                client_socket.sendall(data)
 
-    print("completed task")
+        except Exception as e:
+            print(f"Error during processing: {e}")
+        finally:
+            client_socket.close()
+            print(f"Connection closed with {client_address}")
